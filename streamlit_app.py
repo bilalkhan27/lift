@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -15,13 +16,11 @@ st.title("🚀 Enhanced Lift Breakdown Dashboard")
 progress = st.progress(0)
 status_text = st.empty()
 
-# Upload
 uploaded_file = st.file_uploader("📁 Upload Breakdown Excel File", type=["xlsx"])
 if not uploaded_file:
     st.info("Please upload a breakdown Excel file to proceed.")
     st.stop()
 
-# Map column names
 COLUMN_MAP = {
     "Actual Start": ["Actual Start", "Actual_Start", "Start Time", "Start", "ActualStart"],
     "Date Created": ["Date Created", "Date_Created", "Reported Time", "Created", "Breakdown Time"],
@@ -66,7 +65,6 @@ status_text.text("Step 1/5: Loading and processing data...")
 progress.progress(20)
 df = load_data(uploaded_file)
 
-# Filters
 with st.expander("🔍 Optional Filters"):
     if "Site" in df.columns:
         selected_sites = st.multiselect("Select Site(s)", options=df["Site"].unique(), default=df["Site"].unique())
@@ -77,14 +75,12 @@ with st.expander("🔍 Optional Filters"):
 
 progress.progress(40)
 
-# Forecast Prep
 def prepare_series(df, date_col="Date Created"):
     return df.groupby(df[date_col].dt.date).size().rename("Calls").asfreq("D", fill_value=0)
 
 series = prepare_series(df)
 progress.progress(60)
 
-# Prophet
 df_prophet = series.reset_index()
 df_prophet.columns = ["ds", "y"]
 prophet = Prophet(interval_width=0.8, weekly_seasonality=True)
@@ -92,18 +88,15 @@ prophet.fit(df_prophet)
 future = prophet.make_future_dataframe(periods=7)
 forecast = prophet.predict(future)
 
-# SARIMA
 sarima_model = SARIMAX(series, order=(1, 1, 1), seasonal_order=(1, 0, 1, 7))
 sarima_result = sarima_model.fit(disp=False)
 sarima_forecast = sarima_result.forecast(steps=7)
 
-# Naïve & Moving Avg
 naive_forecast = [series[-1]] * 7
 moving_avg_forecast = [series[-7:].mean()] * 7
 
 progress.progress(80)
 
-# RMSE Comparison (manual RMSE to support older sklearn)
 def rmse(y_true, y_pred):
     return sqrt(mean_squared_error(y_true, y_pred))
 
@@ -115,7 +108,6 @@ ma_rmse = rmse(actual, moving_avg_forecast)
 
 best_model = "Prophet" if prophet_rmse < min(sarima_rmse, naive_rmse, ma_rmse) else "Other"
 
-# Visualisation
 st.subheader("📊 Breakdown Call Forecast – Next 7 Days")
 fig, ax = plt.subplots(figsize=(10, 4))
 series.plot(ax=ax, label="Historical")
@@ -131,14 +123,31 @@ ax.legend()
 ax.set_ylabel("Calls per Day")
 st.pyplot(fig)
 
-# Model Table
 st.subheader("📈 Forecast RMSE Comparison")
 st.write(pd.DataFrame({
     "Model": ["Prophet", "SARIMA", "Naïve", "7-day Moving Avg"],
     "RMSE": [prophet_rmse, sarima_rmse, naive_rmse, ma_rmse]
 }).sort_values("RMSE"))
 
-# Summary
+st.subheader("📅 Forecast Breakdown: Next 7 Days")
+forecast_7d = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(7).copy()
+forecast_7d["ds"] = pd.to_datetime(forecast_7d["ds"])
+forecast_7d["Day"] = forecast_7d["ds"].dt.day_name()
+forecast_7d = forecast_7d[["ds", "Day", "yhat", "yhat_lower", "yhat_upper"]]
+forecast_7d.columns = ["Date", "Day", "Forecasted Calls", "Lower Bound", "Upper Bound"]
+st.dataframe(forecast_7d.style.format({
+    "Forecasted Calls": "{:.1f}",
+    "Lower Bound": "{:.1f}",
+    "Upper Bound": "{:.1f}"
+}))
+
+st.markdown("### 📈 Forecasted Calls per Day (Bar Chart)")
+fig_bar, ax_bar = plt.subplots(figsize=(10, 4))
+ax_bar.bar(forecast_7d["Date"].dt.strftime("%a %d-%b"), forecast_7d["Forecasted Calls"], color="skyblue")
+ax_bar.set_ylabel("Expected Calls")
+ax_bar.set_title("Forecasted Breakdown Calls Over Next 7 Days")
+st.pyplot(fig_bar)
+
 st.subheader("🧾 Dashboard Summary")
 summary_data = {
     "Best-scoring model": [f"{best_model} (RMSE={round(min(prophet_rmse, sarima_rmse, naive_rmse, ma_rmse), 2)})"],
