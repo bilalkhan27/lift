@@ -192,6 +192,33 @@ st.success(f"🏆 Best Performing Model Based on RMSE: **{better_model}**")
 csv = forecast.to_csv(index=False).encode()
 st.download_button("📥 Download Forecast CSV", csv, "forecast.csv", "text/csv")
 
+# 📅 Comparison: Previous Month vs Forecasted Week
+st.subheader("📆 Call Volume Comparison")
+
+# Get last full calendar month
+last_month = series.index.max().to_period("M") - 1
+last_month_data = series[series.index.to_period("M") == last_month]
+previous_month_total = last_month_data.sum()
+
+# Forecast next 7 days from Prophet
+forecast_7day = forecast.set_index("ds").loc[series.index.max() + pd.Timedelta(days=1):].head(7)
+forecast_total = forecast_7day["yhat"].sum()
+
+# Display values
+st.markdown(f"""
+- 📞 **Previous Month Total Calls ({last_month}):** `{int(previous_month_total)}`  
+- 🔮 **Forecasted Calls (Next 7 Days):** `{int(forecast_total)}`  
+""")
+
+# 📈 Visual comparison
+fig, ax = plt.subplots()
+ax.bar(["Previous Month", "Next 7 Days Forecast"], [previous_month_total, forecast_total], color=["#1f77b4", "#ff7f0e"])
+ax.set_ylabel("Total Calls")
+ax.set_title("Previous Month vs Forecasted Week Breakdown Volume")
+st.pyplot(fig)
+
+
+
 # Summary
 st.subheader("📌 Dashboard Summary")
 st.markdown(f"""
