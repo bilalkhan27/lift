@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,10 +9,10 @@ from statsmodels.tsa.seasonal import STL
 from io import BytesIO
 import pytz
 
-st.set_page_config(page_title="📈 Lift Breakdown Forecasting Dashboard", layout="wide")
-st.title("🚀 Enhanced Lift Breakdown Forecasting")
+st.set_page_config(page_title="Lift Breakdown Forecasting Dashboard", layout="wide")
+st.title("Enhanced Lift Breakdown Forecasting")
 
-uploaded_file = st.file_uploader("📁 Upload Breakdown Excel File", type=["xlsx"])
+uploaded_file = st.file_uploader("Upload Breakdown Excel File", type=["xlsx"])
 if not uploaded_file:
     st.info("Please upload a breakdown Excel file to continue.")
     st.stop()
@@ -56,31 +57,31 @@ def load_data(file):
 
 df = load_data(uploaded_file)
 
-# Daily Series
-series = df.groupby(df["Date Created"].dt.date).size().rename("Calls").asfreq("D", fill_value=0)
-df_prophet = series.reset_index().rename(columns={"index": "ds", "Calls": "y"})
+# Dashboard Summary
+st.markdown("### Dashboard Summary")
+total_breakdowns = df.shape[0]
+avg_resolution = df["Resolution_minutes"].mean() if "Resolution_minutes" in df.columns else None
+num_sites = df["Site"].nunique() if "Site" in df.columns else "N/A"
+num_faults = df["Fault"].nunique() if "Fault" in df.columns else "N/A"
+st.markdown(f'''
+- Total Breakdowns: {total_breakdowns}
+- Average Resolution Time: {avg_resolution:.1f} mins
+- Sites Covered: {num_sites}
+- Fault Types: {num_faults}
+''')
 
 # Forecasting
-horizon = st.slider("🔮 Forecast Horizon (days)", 7, 30, 7)
+series = df.groupby(df["Date Created"].dt.date).size().rename("Calls").asfreq("D", fill_value=0)
+horizon = st.slider("Forecast Horizon (days)", 7, 30, 7)
+df_prophet = series.reset_index()
+df_prophet.columns = ["ds", "y"]
 model = Prophet(interval_width=0.9, weekly_seasonality=True)
 model.fit(df_prophet)
 future = model.make_future_dataframe(periods=horizon)
 forecast = model.predict(future)
 
-# Summary KPIs
-total_forecasted = forecast.tail(horizon)["yhat"].sum()
-avg_resolution = df["Resolution_minutes"].mean() if "Resolution_minutes" in df else np.nan
-
-st.markdown(f"""
-### 📌 Dashboard Summary
-- 📅 **Forecast Horizon:** Next {horizon} Days  
-- 📞 **Total Forecasted Calls:** {int(total_forecasted)}  
-- 🛠️ **Average Resolution Time:** {avg_resolution:.1f} mins  
-- 📊 **Historical Period:** {df_prophet['ds'].min().date()} to {df_prophet['ds'].max().date()}
-""")
-
-# Forecast Plot
-st.subheader("📈 Forecasted Breakdown Calls")
+# Forecast Chart
+st.subheader("Forecasted Breakdown Calls")
 fig, ax = plt.subplots(figsize=(10, 4))
 series.plot(ax=ax, label="Historical")
 forecast.set_index("ds")["yhat"].plot(ax=ax, label="Forecast")
@@ -91,55 +92,15 @@ ax.fill_between(forecast["ds"].tail(horizon),
 ax.legend()
 st.pyplot(fig)
 
-# Forecast Table
-st.subheader("🗓️ Forecast Table")
+# Forecast Table and Trend Line
+st.subheader("Forecast Table")
 st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(horizon).round(2))
-
-# STL Decomposition
-st.subheader("📉 Trend Decomposition")
-stl = STL(series, seasonal=7)
-res = stl.fit()
-fig, axs = plt.subplots(3, 1, figsize=(10, 6), sharex=True)
-axs[0].plot(res.trend); axs[0].set_title("Trend")
-axs[1].plot(res.seasonal); axs[1].set_title("Seasonal")
-axs[2].plot(res.resid); axs[2].set_title("Residual")
-st.pyplot(fig)
-
-# Site Breakdown
-if "Site" in df.columns:
-    st.subheader("📊 Breakdown Volume per Site Over Time")
-    site_group = df.groupby([df["Date Created"].dt.date, "Site"]).size().unstack().fillna(0)
-    st.line_chart(site_group)
-
-# Monthly Faults
-if "Fault" in df.columns:
-    st.subheader("📅 Monthly Fault Frequency Trend")
-    fault_monthly = df.groupby(["Month", "Fault"]).size().unstack().fillna(0)
-    st.bar_chart(fault_monthly)
-
-# Weekly Heatmap
-st.subheader("🕓 Weekly Heatmap (Hour vs Day)")
-heatmap_data = df.groupby(["DoW", "Hour"]).size().unstack(fill_value=0)
-heatmap_data = heatmap_data.reindex(index=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
-fig, ax = plt.subplots(figsize=(12, 4))
-sns.heatmap(heatmap_data, cmap="YlGnBu", ax=ax)
-st.pyplot(fig)
-
-# Fault Pie
-if "Fault" in df.columns:
-    st.subheader("📌 Fault Share Pie Chart")
-    fault_counts = df["Fault"].value_counts()
-    fig, ax = plt.subplots()
-    ax.pie(fault_counts, labels=fault_counts.index, autopct="%1.1f%%")
-    st.pyplot(fig)
-
-# 🚨 Anomaly Detection
-st.subheader("🚨 Anomaly Detection (3× Daily Average)")
-threshold = series.mean() * 3
-anomalies = series[series > threshold]
-st.write(f"Threshold: {threshold:.1f} calls/day")
-st.dataframe(anomalies.reset_index().rename(columns={"index": "Date", "Calls": "Breakdown Calls"}))
-
-# 📥 Download
-csv = forecast.to_csv(index=False).encode()
-st.download_button("📥 Download Forecast CSV", csv, "forecast.csv", "text/csv")
+fig2, ax2 = plt.subplots()
+forecast_tail = forecast.tail(horizon)
+ax2.plot(forecast_tail["ds"], forecast_tail["yhat"], marker='o', label="Forecasted Calls")
+ax2.fill_between(forecast_tail["ds"], forecast_tail["yhat_lower"], forecast_tail["yhat_upper"], alpha=0.2)
+ax2.set_title("Forecast Trend")
+ax2.set_xlabel("Date")
+ax2.set_ylabel("Predicted Calls")
+ax2.legend()
+st.pyplot(fig2)
