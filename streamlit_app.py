@@ -12,7 +12,7 @@ from io import BytesIO
 
 # Page setup
 st.set_page_config(page_title="📈 Lift Breakdown Forecasting Dashboard", layout="wide")
-st.title("🚀 Enhanced Lift Breakdown Forecasting")
+st.title("🚀  Lift Breakdown Forecasting")
 
 # File uploader
 uploaded_file = st.file_uploader("📁 Upload Breakdown Excel File", type=["xlsx"])
