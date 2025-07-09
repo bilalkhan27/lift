@@ -50,6 +50,7 @@ def load_data(file):
         df["Response Delay_hours"] = (df["Actual Start"] - df["Date Created"]).dt.total_seconds() / 3600
     if "Actual Finish" in df.columns and "Actual Start" in df.columns:
         df["Resolution_minutes"] = (df["Actual Finish"] - df["Actual Start"]).dt.total_seconds() / 60
+        
     if "Date Created" in df.columns:
         df["Hour"] = df["Date Created"].dt.hour
         df["DoW"] = df["Date Created"].dt.day_name()
@@ -139,7 +140,11 @@ st.subheader("📌 Dashboard Summary")
 st.markdown(f"""
 - ✅ **Best Performing Model:** **{best_model}**
 - 📞 **Total Forecasted Calls (next {horizon} days):** **{int(forecast.iloc[-horizon:]['yhat'].sum())}**
-- ⏱️ **Average Response Delay:** {df['Response Delay_hours'].mean():.1f} hrs
+- 🛠️ **Average Resolution Time:** {
+    f"{df['Resolution_minutes'].mean():.1f} mins"
+    if 'Resolution_minutes' in df.columns else "N/A"
+}
+
 - 🛠️ **Average Resolution Time:** {df['Resolution_minutes'].mean():.1f} mins
 """)
  
