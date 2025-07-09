@@ -142,3 +142,4 @@ st.markdown(f"""
 - ⏱️ **Average Response Delay:** {df['Response Delay_hours'].mean():.1f} hrs
 - 🛠️ **Average Resolution Time:** {df['Resolution_minutes'].mean():.1f} mins
 """)
+ 
