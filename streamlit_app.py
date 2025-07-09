@@ -64,22 +64,6 @@ def load_data(file):
 # Load and clean
 df = load_data(uploaded_file)
 
-# Forecast Table
-st.subheader("🗓️ Forecast Table")
-st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(horizon).round(2))
-
-# CSV Export
-csv = forecast.to_csv(index=False).encode()
-st.download_button("📥 Download Forecast CSV", csv, "forecast.csv", "text/csv")
-
-# Summary
-st.subheader("📌 Dashboard Summary")
-st.markdown(f"""
-- 📅 **Forecast Horizon:** Next {horizon} Days  
-- 📞 **Total Forecasted Calls:** {int(forecast.iloc[-horizon:]['yhat'].sum())}  
-- ⏱️ **Average Resolution Time:** {
-    f"{df['Resolution_minutes'].mean():.1f} mins" if 'Resolution_minutes' in df.columns else "N/A"
-}
 # Show sample
 st.subheader("📋 Uploaded Data Sample")
 st.dataframe(df.head(50))
@@ -157,4 +141,20 @@ if "Fault" in df.columns:
     ax.pie(fault_counts, labels=fault_counts.index, autopct="%1.1f%%")
     st.pyplot(fig)
 
+# Forecast Table
+st.subheader("🗓️ Forecast Table")
+st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(horizon).round(2))
+
+# CSV Export
+csv = forecast.to_csv(index=False).encode()
+st.download_button("📥 Download Forecast CSV", csv, "forecast.csv", "text/csv")
+
+# Summary
+st.subheader("📌 Dashboard Summary")
+st.markdown(f"""
+- 📅 **Forecast Horizon:** Next {horizon} Days  
+- 📞 **Total Forecasted Calls:** {int(forecast.iloc[-horizon:]['yhat'].sum())}  
+- ⏱️ **Average Resolution Time:** {
+    f"{df['Resolution_minutes'].mean():.1f} mins" if 'Resolution_minutes' in df.columns else "N/A"
+}
 """)
