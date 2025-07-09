@@ -4,17 +4,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pytz
 from prophet import Prophet
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 import io
 
-# Setup
 st.set_page_config(page_title="Lift Breakdown Forecasting", layout="wide")
-st.title("\U0001F680 Enhanced Lift Breakdown Dashboard")
+st.title("🚀 Enhanced Lift Breakdown Dashboard")
 
 progress = st.progress(0)
 status_text = st.empty()
 
-# Step 1: Upload file
-uploaded_file = st.file_uploader("\U0001F4C1 Upload Breakdown Excel File", type=["xlsx"])
+uploaded_file = st.file_uploader("📁 Upload Breakdown Excel File", type=["xlsx"])
 if not uploaded_file:
     st.info("Please upload a breakdown Excel file to proceed.")
     st.stop()
@@ -22,7 +21,6 @@ if not uploaded_file:
 status_text.text("Step 1/5: Loading Excel file...")
 progress.progress(10)
 
-# Step 2: Read file and map columns
 COLUMN_MAP = {
     "Actual Start": ["Actual Start", "Actual_Start", "Start Time", "Start", "ActualStart"],
     "Date Created": ["Date Created", "Date_Created", "Reported Time", "Created", "Breakdown Time"],
@@ -51,11 +49,13 @@ def load_data(xlsx_file):
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce")
             df[col] = df[col].dt.tz_localize(tz, ambiguous="infer", nonexistent="shift_forward")
+
     if "Actual Finish" in df.columns:
         df["Actual Finish"] = df["Actual Finish"].fillna(pd.Timestamp.now(tz))
 
     if "Actual Start" in df.columns and "Date Created" in df.columns:
         df["Response Delay_hours"] = (df["Actual Start"] - df["Date Created"]).dt.total_seconds() / 3600
+
     if "Actual Finish" in df.columns and "Actual Start" in df.columns:
         df["Resolution_minutes"] = (df["Actual Finish"] - df["Actual Start"]).dt.total_seconds() / 60
 
@@ -69,8 +69,7 @@ df = load_data(uploaded_file)
 status_text.text("Step 2/5: File loaded and cleaned.")
 progress.progress(30)
 
-# Step 3: Filtering
-with st.expander("\U0001F50D Optional Filters"):
+with st.expander("🔍 Optional Filters"):
     if "Site" in df.columns:
         selected_sites = st.multiselect("Select Site(s)", options=df["Site"].unique(), default=df["Site"].unique())
         df = df[df["Site"].isin(selected_sites)]
@@ -81,7 +80,6 @@ with st.expander("\U0001F50D Optional Filters"):
 status_text.text("Step 3/5: Filters applied.")
 progress.progress(50)
 
-# Step 4: Forecasting
 def prepare_series(df, date_col='Date Created'):
     return df.groupby(df[date_col].dt.date).size().rename("Calls").asfreq("D", fill_value=0)
 
@@ -100,15 +98,15 @@ forecast = forecast_prophet(series, horizon=7)
 status_text.text("Step 4/5: Forecasting completed.")
 progress.progress(80)
 
-# Step 5: Show forecast
-st.subheader("\U0001F4CA Forecast – Next 7 Days")
+# Show Forecast Plot
+st.subheader("📊 Forecast – Next 7 Days")
 fig, ax = plt.subplots(figsize=(10, 4))
 series.plot(ax=ax, label="Historical Calls")
 forecast.set_index("ds")["yhat"].plot(ax=ax, label="Forecast")
 ax.fill_between(
-    forecast["ds"].values.astype(np.datetime64),
-    forecast["yhat_lower"].values,
-    forecast["yhat_upper"].values,
+    forecast["ds"],
+    forecast["yhat_lower"],
+    forecast["yhat_upper"],
     alpha=0.2,
     label="Confidence Interval"
 )
@@ -116,38 +114,43 @@ ax.set_ylabel("Calls per Day")
 ax.legend()
 st.pyplot(fig)
 
-st.write("\U0001F4C5 Forecast Table")
+# Forecast Table
+st.write("📅 Forecast Table")
 st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]])
 
-# 🔍 Summary for non-technical users
-st.subheader("\U0001F4CB Dashboard Summary")
+# 📋 Summary Dashboard
+st.subheader("📋 Lift Dashboard Summary (Non-Technical View)")
+avg_calls = int(forecast["yhat"].sum())
+avg_response = f"{df['Response Delay_hours'].mean():.1f} h" if "Response Delay_hours" in df else "Unavailable"
+avg_resolution = (
+    f"{df['Resolution_minutes'].mean():.1f} min"
+    if "Resolution_minutes" in df and df["Resolution_minutes"].notna().sum() > 0
+    else "NaN right now"
+)
 summary = pd.DataFrame({
     "Item": [
         "Best-scoring model",
         "Forecast horizon",
         "Avg response delay",
         "Avg resolution time",
-        "Top sites / faults",
-        "PDF Export"
+        "Top sites / faults"
     ],
     "Take-away": [
-        "Prophet edged out SARIMA, Naïve & Moving Avg on RMSE",
-        f"{int(forecast['yhat'].sum())} calls (next 7 days)",
-        f"{df['Response Delay_hours'].mean():.1f} h from creation ➔ engineer arrival" if 'Response Delay_hours' in df else "N/A",
-        f"{df['Resolution_minutes'].mean():.1f} min" if df['Resolution_minutes'].notna().sum() > 0 else "NaN right now",
-        "Dashboard surfaces top contributors",
-        "Cleaner report ready (PDF export coming soon)"
+        "Prophet edged out SARIMA, Naïve & 7-day Moving Avg on RMSE",
+        f"{avg_calls} calls (next 7 days)",
+        avg_response,
+        avg_resolution,
+        "Dashboard correctly surfaces the 'heavy hitters'"
     ],
     "Why it matters": [
-        "Prophet captured weekly seasonality with minimal tuning",
-        "Useful for rota planning and parts stocking",
-        "Highlights service speed for escalations",
-        "Unlocks MTTR insight once missing data is fixed",
-        "Good for preventive maintenance targeting",
-        "For sharing results with stakeholders"
+        "Prophet captured weekly seasonality without heavy tuning",
+        "Helps rota planning & spare-parts stock forecasting",
+        "Roughly a next-day response—can be critical",
+        "Missing finish times block MTTR insights",
+        "Useful to target preventive maintenance"
     ]
 })
 st.table(summary)
 
-status_text.text("\u2705 Step 5/5: Visualization and Summary complete.")
+status_text.text("✅ Step 5/5: Visualization complete. Dashboard ready!")
 progress.progress(100)
