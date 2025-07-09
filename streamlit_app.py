@@ -36,11 +36,17 @@ def _find_column(df, aliases):
         if alias in df.columns:
             return alias
     return None
-
 @st.cache_data(show_spinner=False)
 def load_data(xlsx_file):
     st.info("🔄 Loading uploaded Excel file...")
-    df = pd.read_excel(xlsx_file)
+
+    # Use BytesIO to avoid ImportError for openpyxl
+    try:
+        df = pd.read_excel(io.BytesIO(xlsx_file.read()))
+    except Exception as e:
+        st.error(f"❌ Failed to load Excel file: {e}")
+        return pd.DataFrame()
+
     rename_map = {}
     for canonical, aliases in COLUMN_MAP.items():
         found_col = _find_column(df, aliases)
