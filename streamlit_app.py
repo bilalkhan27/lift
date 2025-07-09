@@ -49,18 +49,28 @@ def load_data(xlsx_file):
     df = df.rename(columns=rename_map)
 
     tz = pytz.timezone("Europe/London")
+
+    # Safe datetime conversion
     for col in ["Actual Start", "Date Created", "Actual Finish"]:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce")
             df[col] = df[col].dt.tz_localize(tz, ambiguous="infer", nonexistent="shift_forward")
-    df["Actual Finish"] = df["Actual Finish"].fillna(pd.Timestamp.now(tz))
 
+    # Only fillna if column exists
+    if "Actual Finish" in df.columns:
+        df["Actual Finish"] = df["Actual Finish"].fillna(pd.Timestamp.now(tz))
+
+    # Conditional derived columns
     if "Actual Start" in df.columns and "Date Created" in df.columns:
         df["Response Delay_hours"] = (df["Actual Start"] - df["Date Created"]).dt.total_seconds() / 3600
     if "Actual Finish" in df.columns and "Actual Start" in df.columns:
         df["Resolution_minutes"] = (df["Actual Finish"] - df["Actual Start"]).dt.total_seconds() / 60
-    df["Hour"] = df["Date Created"].dt.hour
-    df["DoW"] = df["Date Created"].dt.day_name()
+
+    # Feature engineering only if "Date Created" exists
+    if "Date Created" in df.columns:
+        df["Hour"] = df["Date Created"].dt.hour
+        df["DoW"] = df["Date Created"].dt.day_name()
+
     return df
 
 df = load_data(uploaded_file)
