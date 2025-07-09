@@ -162,6 +162,42 @@ ax.set_title("Forecasted Breakdown Calls (Next 7 Days)")
 ax.legend()
 st.pyplot(fig)
 
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+# 🔍 Model Comparison Section
+st.subheader("📊 Forecast Model Comparison")
+
+# SARIMA Model Fit
+sarima_model = SARIMAX(series, order=(1,1,1), seasonal_order=(1,1,1,7))
+sarima_result = sarima_model.fit(disp=False)
+sarima_forecast = sarima_result.forecast(steps=horizon)
+
+# Compute RMSE
+prophet_rmse = sqrt(mean_squared_error(forecast["yhat"].tail(horizon), series[-horizon:]))
+sarima_rmse = sqrt(mean_squared_error(sarima_forecast, series[-horizon:]))
+
+# Display RMSE values
+st.markdown(f"""
+- 🤖 **Prophet RMSE:** `{prophet_rmse:.2f}`
+- 🔁 **SARIMA RMSE:** `{sarima_rmse:.2f}`
+""")
+
+# Highlight best model
+better_model = "Prophet" if prophet_rmse < sarima_rmse else "SARIMA"
+st.success(f"🏆 Best Performing Model Based on RMSE: **{better_model}**")
+
+# Optional: Plot both forecasts
+st.subheader("📈 Comparison: Prophet vs SARIMA Forecast")
+fig, ax = plt.subplots(figsize=(10, 4))
+series.plot(ax=ax, label="Historical", color="gray")
+forecast.set_index("ds")["yhat"].tail(horizon).plot(ax=ax, label="Prophet Forecast")
+sarima_forecast.index = forecast["ds"].tail(horizon).values  # align x-axis
+sarima_forecast.plot(ax=ax, label="SARIMA Forecast", linestyle="--")
+ax.legend()
+ax.set_title("Next Week Forecast: Prophet vs SARIMA")
+st.pyplot(fig)
+
+
+
 
 # CSV Export
 csv = forecast.to_csv(index=False).encode()
