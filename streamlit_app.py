@@ -158,7 +158,7 @@ ax.fill_between(
 )
 ax.set_xlabel("Date")
 ax.set_ylabel("Forecasted Calls")
-ax.set_title("Forecasted Breakdown Calls (Next 7–30 Days)")
+ax.set_title("Forecasted Breakdown Calls (Next 7 Days)")
 ax.legend()
 st.pyplot(fig)
 
