@@ -6,6 +6,7 @@ import pytz
 from prophet import Prophet
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from sklearn.metrics import mean_squared_error
+from math import sqrt
 import io
 
 st.set_page_config(page_title="Lift Breakdown Forecasting", layout="wide")
@@ -102,22 +103,30 @@ moving_avg_forecast = [series[-7:].mean()] * 7
 
 progress.progress(80)
 
-# RMSE Comparison
+# RMSE Comparison (manual RMSE to support older sklearn)
+def rmse(y_true, y_pred):
+    return sqrt(mean_squared_error(y_true, y_pred))
+
 actual = series[-7:].values
-prophet_rmse = mean_squared_error(actual, forecast.iloc[-14:-7]["yhat"].values, squared=False)
-sarima_rmse = mean_squared_error(actual, sarima_forecast.values, squared=False)
-naive_rmse = mean_squared_error(actual, naive_forecast, squared=False)
-ma_rmse = mean_squared_error(actual, moving_avg_forecast, squared=False)
+prophet_rmse = rmse(actual, forecast.iloc[-7:]["yhat"].values)
+sarima_rmse = rmse(actual, sarima_forecast.values)
+naive_rmse = rmse(actual, naive_forecast)
+ma_rmse = rmse(actual, moving_avg_forecast)
 
 best_model = "Prophet" if prophet_rmse < min(sarima_rmse, naive_rmse, ma_rmse) else "Other"
 
 # Visualisation
 st.subheader("📊 Breakdown Call Forecast – Next 7 Days")
-
 fig, ax = plt.subplots(figsize=(10, 4))
 series.plot(ax=ax, label="Historical")
 forecast.set_index("ds")["yhat"].plot(ax=ax, label="Prophet Forecast")
-ax.fill_between(forecast["ds"].values, forecast["yhat_lower"].values, forecast["yhat_upper"].values, alpha=0.2)
+ax.fill_between(
+    forecast["ds"].tail(7).values,
+    forecast["yhat_lower"].tail(7).values,
+    forecast["yhat_upper"].tail(7).values,
+    alpha=0.2,
+    label="Confidence Interval"
+)
 ax.legend()
 ax.set_ylabel("Calls per Day")
 st.pyplot(fig)
@@ -134,10 +143,10 @@ st.subheader("🧾 Dashboard Summary")
 summary_data = {
     "Best-scoring model": [f"{best_model} (RMSE={round(min(prophet_rmse, sarima_rmse, naive_rmse, ma_rmse), 2)})"],
     "Forecast horizon": [f"{int(forecast.iloc[-7:]['yhat'].sum())} calls (≈{round(forecast.iloc[-7:]['yhat'].mean(), 1)} daily avg)"],
-    "Avg response delay": [f"{df['Response Delay_hours'].mean():.1f} hours"],
-    "Avg resolution time": [f"{df['Resolution_minutes'].mean():.1f} min" if 'Resolution_minutes' in df else "NaN - missing finish times"],
-    "Top Sites": [", ".join(df['Site'].value_counts().head(3).index)],
-    "Top Faults": [", ".join(df['Fault'].value_counts().head(3).index)],
+    "Avg response delay": [f"{df['Response Delay_hours'].mean():.1f} hours" if 'Response Delay_hours' in df else "N/A"],
+    "Avg resolution time": [f"{df['Resolution_minutes'].mean():.1f} min" if 'Resolution_minutes' in df else "N/A"],
+    "Top Sites": [", ".join(df['Site'].value_counts().head(3).index) if 'Site' in df else "N/A"],
+    "Top Faults": [", ".join(df['Fault'].value_counts().head(3).index) if 'Fault' in df else "N/A"],
 }
 st.table(pd.DataFrame(summary_data))
 
