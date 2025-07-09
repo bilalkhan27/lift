@@ -210,17 +210,5 @@ fig, ax = plt.subplots()
 dow_avg.plot(kind="bar", ax=ax)
 ax.set_ylabel("Avg Daily Calls")
 st.pyplot(fig)
-st.subheader("🚨 Anomaly Detection: Sudden Surges")
-mean_calls = series.mean()
-threshold = mean_calls * 3
-anomalies = series[series > threshold]
-if not anomalies.empty:
-    st.warning(f"⚠️ {len(anomalies)} anomaly days found (calls > 3× average)")
-    st.dataframe(anomalies.reset_index().rename(columns={"Date Created": "Date", "Calls": "Call Volume"}))
-else:
-    st.success("✅ No sudden surge days detected.")
-selected_site = st.selectbox("🏢 Filter by Site (Optional)", ["All"] + sorted(df["Site"].dropna().unique()))
-if selected_site != "All":
-    df = df[df["Site"] == selected_site]
 
 """)
