@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import pytz
 from prophet import Prophet
 from statsmodels.tsa.statespace.sarimax import SARIMAX
@@ -77,7 +78,7 @@ df = load_data(uploaded_file)
 status_text.text("Step 2/5: File loaded and cleaned.")
 progress.progress(30)
 
-# Step 3: Filtering (Optional UI Filters here)
+# Step 3: Filtering
 with st.expander("🔍 Optional Filters"):
     if "Site" in df.columns:
         selected_sites = st.multiselect("Select Site(s)", options=df["Site"].unique(), default=df["Site"].unique())
@@ -110,18 +111,26 @@ progress.progress(80)
 
 # Step 5: Show forecast and charts
 st.subheader("📊 Forecast – Next 7 Days")
+
+# Convert dates to Matplotlib format
+forecast['ds_num'] = mdates.date2num(forecast['ds'])
+
 fig, ax = plt.subplots(figsize=(10, 4))
 series.plot(ax=ax, label="Historical Calls")
 forecast.set_index("ds")["yhat"].plot(ax=ax, label="Forecast")
+
 ax.fill_between(
-    forecast["ds"],
+    forecast["ds_num"],
     forecast["yhat_lower"],
     forecast["yhat_upper"],
     alpha=0.2,
     label="Confidence Interval"
 )
+
 ax.set_ylabel("Calls per Day")
 ax.legend()
+ax.xaxis_date()
+fig.autofmt_xdate()
 st.pyplot(fig)
 
 # Forecast Table
