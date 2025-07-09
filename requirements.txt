@@ -7,3 +7,4 @@ statsmodels
 scikit-learn>=0.22
 
 pmdarima
+fpdf
