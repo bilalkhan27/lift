@@ -172,7 +172,5 @@ st.subheader("📌 Dashboard Summary")
 st.markdown(f"""
 - 📅 **Forecast Horizon:** Next {horizon} Days  
 - 📞 **Total Forecasted Calls:** {int(forecast.iloc[-horizon:]['yhat'].sum())}  
-- ⏱️ **Average Resolution Time:** {
-    f"{df['Resolution_minutes'].mean():.1f} mins" if 'Resolution_minutes' in df.columns else "N/A"
-}
+
 """)
