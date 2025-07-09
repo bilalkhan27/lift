@@ -198,6 +198,8 @@ st.subheader("📌 Dashboard Summary")
 st.markdown(f"""
 - 📅 **Forecast Horizon:** Next {horizon} Days  
 - 📞 **Total Forecasted Calls:** {int(forecast.iloc[-horizon:]['yhat'].sum())}  
+
+""")
 st.subheader("🔥 Top 5 Frequent Fault Types")
 if "Fault" in df.columns:
     top_faults = df["Fault"].value_counts().head(5)
@@ -210,5 +212,3 @@ fig, ax = plt.subplots()
 dow_avg.plot(kind="bar", ax=ax)
 ax.set_ylabel("Avg Daily Calls")
 st.pyplot(fig)
-
-""")
