@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,22 +6,20 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from prophet import Prophet
 from statsmodels.tsa.seasonal import STL
+from statsmodels.tsa.arima.model import ARIMA
 from sklearn.metrics import mean_squared_error
 from math import sqrt
 import pytz
-from io import BytesIO
 
 # Page setup
 st.set_page_config(page_title="📈 Lift Breakdown Forecasting Dashboard", layout="wide")
 st.title("🚀 Enhanced Lift Breakdown Forecasting")
 
-# File uploader
 uploaded_file = st.file_uploader("📁 Upload Breakdown Excel File", type=["xlsx"])
 if not uploaded_file:
     st.info("Please upload a breakdown Excel file to continue.")
     st.stop()
 
-# Column mapping for flexibility
 COLUMN_MAP = {
     "Actual Start": ["Actual Start", "Actual_Start", "Start Time", "Start", "ActualStart"],
     "Date Created": ["Date Created", "Date_Created", "Reported Time", "Created", "Breakdown Time"],
@@ -29,14 +28,12 @@ COLUMN_MAP = {
     "Fault": ["Fault", "Fault Code", "Error", "Error Type"],
 }
 
-# Helper to match column aliases
 def _find_column(df, aliases):
     for alias in aliases:
         if alias in df.columns:
             return alias
     return None
 
-# Data loader
 def load_data(file):
     df = pd.read_excel(file)
     rename_map = {}
@@ -61,46 +58,61 @@ def load_data(file):
         df["Month"] = df["Date Created"].dt.to_period("M")
     return df
 
-# Load and clean
 df = load_data(uploaded_file)
 
-# Show sample
 st.subheader("📋 Uploaded Data Sample")
 st.dataframe(df.head(50))
 
-# Forecast horizon selector
 horizon = st.slider("🔮 Forecast Horizon (days)", 7, 30, 7)
-
-# Prepare time series
 series = df.groupby(df["Date Created"].dt.date).size().rename("Calls")
 series.index = pd.to_datetime(series.index)
 series = series.asfreq("D", fill_value=0)
 
-# Prophet forecasting
+# Prophet model
 df_prophet = series.reset_index()
 df_prophet.columns = ["ds", "y"]
 prophet = Prophet(interval_width=0.9, weekly_seasonality=True)
 prophet.fit(df_prophet)
 future = prophet.make_future_dataframe(periods=horizon)
-forecast = prophet.predict(future)
+forecast_prophet = prophet.predict(future)
+forecast_prophet["model"] = "Prophet"
 
-# Convert x-axis to datetime for fill_between
-forecast["ds"] = pd.to_datetime(forecast["ds"])
+# ARIMA model
+arima_model = ARIMA(series, order=(2,1,2))
+arima_result = arima_model.fit()
+forecast_arima = arima_result.get_forecast(steps=horizon)
+forecast_arima_df = forecast_arima.summary_frame()
+forecast_arima_df["ds"] = pd.date_range(series.index[-1] + pd.Timedelta(days=1), periods=horizon)
+forecast_arima_df.rename(columns={"mean": "yhat", "mean_ci_lower": "yhat_lower", "mean_ci_upper": "yhat_upper"}, inplace=True)
+forecast_arima_df["model"] = "ARIMA"
 
-# STL decomposition
+# RMSE comparison
+prophet_rmse = sqrt(mean_squared_error(series[-horizon:], forecast_prophet.set_index("ds")["yhat"][:horizon]))
+arima_rmse = sqrt(mean_squared_error(series[-horizon:], forecast_arima_df.set_index("ds")["yhat"][:horizon]))
+
+best_model = "Prophet" if prophet_rmse < arima_rmse else "ARIMA"
+
+# STL
 stl = STL(series, seasonal=7)
 res = stl.fit()
 
-# Forecast chart
+# Forecast chart with model comparison
 st.subheader("📈 Forecasted Breakdown Calls")
 fig, ax = plt.subplots(figsize=(10, 4))
 series.plot(ax=ax, label="Historical")
-forecast.set_index("ds")["yhat"].plot(ax=ax, label="Forecast")
+forecast_prophet.set_index("ds")["yhat"].plot(ax=ax, label="Prophet Forecast")
+forecast_arima_df.set_index("ds")["yhat"].plot(ax=ax, linestyle="--", label="ARIMA Forecast")
 ax.fill_between(
-    forecast["ds"].tail(horizon).values,
-    forecast["yhat_lower"].tail(horizon).values.astype(float),
-    forecast["yhat_upper"].tail(horizon).values.astype(float),
-    alpha=0.2, label="Confidence Interval"
+    forecast_prophet["ds"].tail(horizon).values,
+    forecast_prophet["yhat_lower"].tail(horizon).values,
+    forecast_prophet["yhat_upper"].tail(horizon).values,
+    alpha=0.2, label="Prophet CI"
+)
+ax.fill_between(
+    forecast_arima_df["ds"].values,
+    forecast_arima_df["yhat_lower"].values,
+    forecast_arima_df["yhat_upper"].values,
+    alpha=0.1, color="gray", label="ARIMA CI"
 )
 ax.legend()
 st.pyplot(fig)
@@ -113,48 +125,31 @@ axs[1].plot(res.seasonal); axs[1].set_title("Seasonal")
 axs[2].plot(res.resid); axs[2].set_title("Residual")
 st.pyplot(fig)
 
-# Breakdown per Site
-if "Site" in df.columns:
-    st.subheader("📊 Breakdown Volume per Site Over Time")
-    site_group = df.groupby([df["Date Created"].dt.date, "Site"]).size().unstack().fillna(0)
-    st.line_chart(site_group)
+# Model comparison summary
+st.subheader("🤖 Model Comparison")
+st.markdown(f'''
+- **Prophet RMSE:** {prophet_rmse:.2f}  
+- **ARIMA RMSE:** {arima_rmse:.2f}  
+- ✅ **Best Performing Model:** `{best_model}`
+''')
 
-# Monthly Fault Frequency
-if "Fault" in df.columns:
-    st.subheader("📅 Monthly Fault Frequency Trend")
-    fault_monthly = df.groupby(["Month", "Fault"]).size().unstack().fillna(0)
-    st.bar_chart(fault_monthly)
-
-# Weekly Heatmap
-st.subheader("🕓 Weekly Heatmap (Hour vs Day)")
-heatmap_data = df.groupby(["DoW", "Hour"]).size().unstack(fill_value=0)
-heatmap_data = heatmap_data.reindex(index=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
-fig, ax = plt.subplots(figsize=(12, 4))
-sns.heatmap(heatmap_data, cmap="YlGnBu", ax=ax)
-st.pyplot(fig)
-
-# Fault Pie Chart
-if "Fault" in df.columns:
-    st.subheader("📌 Fault Share Pie Chart")
-    fault_counts = df["Fault"].value_counts()
-    fig, ax = plt.subplots()
-    ax.pie(fault_counts, labels=fault_counts.index, autopct="%1.1f%%")
-    st.pyplot(fig)
-
-# Forecast Table
+# Forecast table from best model
 st.subheader("🗓️ Forecast Table")
-st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(horizon).round(2))
+if best_model == "Prophet":
+    display_df = forecast_prophet[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(horizon).round(2)
+else:
+    display_df = forecast_arima_df[["ds", "yhat", "yhat_lower", "yhat_upper"]].round(2)
+st.dataframe(display_df)
 
 # CSV Export
-csv = forecast.to_csv(index=False).encode()
+csv = display_df.to_csv(index=False).encode()
 st.download_button("📥 Download Forecast CSV", csv, "forecast.csv", "text/csv")
 
 # Summary
 st.subheader("📌 Dashboard Summary")
-st.markdown(f"""
+st.markdown(f'''
 - 📅 **Forecast Horizon:** Next {horizon} Days  
-- 📞 **Total Forecasted Calls:** {int(forecast.iloc[-horizon:]['yhat'].sum())}  
-- ⏱️ **Average Resolution Time:** {
-    f"{df['Resolution_minutes'].mean():.1f} mins" if 'Resolution_minutes' in df.columns else "N/A"
-}
-""")
+- 📞 **Total Forecasted Calls:** {int(display_df["yhat"].sum())}  
+- 🧠 **Best Model Used:** {best_model}  
+- ⏱️ **Average Resolution Time:** {f"{df["Resolution_minutes"].mean():.1f} mins" if "Resolution_minutes" in df.columns else "N/A"}
+''')
