@@ -1,16 +1,14 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 from prophet import Prophet
-from statsmodels.tsa.statespace.sarimax import SARIMAX
-from sklearn.metrics import mean_absolute_error, mean_squared_error
-from math import sqrt
-import io
+from statsmodels.tsa.seasonal import STL
+from io import BytesIO
 import pytz
 
-st.set_page_config(page_title=" Lift Breakdown Forecasting Dashboard", layout="wide")
+st.set_page_config(page_title="📈 Lift Breakdown Forecasting Dashboard", layout="wide")
 st.title("🚀 Enhanced Lift Breakdown Forecasting")
 
 uploaded_file = st.file_uploader("📁 Upload Breakdown Excel File", type=["xlsx"])
@@ -33,7 +31,7 @@ def _find_column(df, aliases):
     return None
 
 def load_data(file):
-    df = pd.read_excel(io.BytesIO(file.read()))
+    df = pd.read_excel(file)
     rename_map = {}
     for canonical, aliases in COLUMN_MAP.items():
         found_col = _find_column(df, aliases)
@@ -53,61 +51,43 @@ def load_data(file):
     if "Date Created" in df.columns:
         df["Hour"] = df["Date Created"].dt.hour
         df["DoW"] = df["Date Created"].dt.day_name()
+        df["Month"] = df["Date Created"].dt.to_period("M")
     return df
 
 df = load_data(uploaded_file)
 
-# Show raw data
-st.subheader(" Uploaded Data Sample")
-st.dataframe(df.head(50))
+# Daily Series
+series = df.groupby(df["Date Created"].dt.date).size().rename("Calls").asfreq("D", fill_value=0)
+df_prophet = series.reset_index().rename(columns={"index": "ds", "Calls": "y"})
 
-# Time series prep
-def prepare_series(df, date_col="Date Created"):
-    return df.groupby(df[date_col].dt.date).size().rename("Calls").asfreq("D", fill_value=0)
+# Forecasting
+horizon = st.slider("🔮 Forecast Horizon (days)", 7, 30, 7)
+model = Prophet(interval_width=0.9, weekly_seasonality=True)
+model.fit(df_prophet)
+future = model.make_future_dataframe(periods=horizon)
+forecast = model.predict(future)
 
-series = prepare_series(df)
+# Summary KPIs
+total_forecasted = forecast.tail(horizon)["yhat"].sum()
+avg_resolution = df["Resolution_minutes"].mean() if "Resolution_minutes" in df else np.nan
 
-# Forecast horizon selector
-horizon = st.slider("🔮 Select Forecast Horizon (days)", 7, 30, 7)
+st.markdown(f"""
+### 📌 Dashboard Summary
+- 📅 **Forecast Horizon:** Next {horizon} Days  
+- 📞 **Total Forecasted Calls:** {int(total_forecasted)}  
+- 🛠️ **Average Resolution Time:** {avg_resolution:.1f} mins  
+- 📊 **Historical Period:** {df_prophet['ds'].min().date()} to {df_prophet['ds'].max().date()}
+""")
 
-# Prophet
-df_prophet = series.reset_index()
-df_prophet.columns = ["ds", "y"]
-prophet = Prophet(interval_width=0.8, weekly_seasonality=True)
-prophet.fit(df_prophet)
-future = prophet.make_future_dataframe(periods=horizon)
-forecast = prophet.predict(future)
-
-# SARIMA
-sarima_model = SARIMAX(series, order=(1, 1, 1), seasonal_order=(1, 0, 1, 7))
-sarima_result = sarima_model.fit(disp=False)
-sarima_forecast = sarima_result.forecast(steps=horizon)
-
-# Evaluation
-def rmse(y_true, y_pred):
-    return sqrt(mean_squared_error(y_true, y_pred))
-
-actual = series[-horizon:].values
-prophet_rmse = rmse(actual, forecast.iloc[-horizon:]["yhat"].values)
-sarima_rmse = rmse(actual, sarima_forecast.values)
-naive_rmse = rmse(actual, [series[-1]] * horizon)
-ma_rmse = rmse(actual, [series[-7:].mean()] * horizon)
-
-best_model = min(
-    [("Prophet", prophet_rmse), ("SARIMA", sarima_rmse), ("Naive", naive_rmse), ("Moving Avg", ma_rmse)],
-    key=lambda x: x[1]
-)[0]
-
-# Visual Forecast
-st.subheader(f" Forecasted Breakdown Calls – Next {horizon} Days")
+# Forecast Plot
+st.subheader("📈 Forecasted Breakdown Calls")
 fig, ax = plt.subplots(figsize=(10, 4))
 series.plot(ax=ax, label="Historical")
-forecast.set_index("ds")["yhat"].plot(ax=ax, label="Prophet Forecast")
-ax.fill_between(forecast["ds"].tail(horizon).values,
-                forecast["yhat_lower"].tail(horizon).values,
-                forecast["yhat_upper"].tail(horizon).values,
+forecast.set_index("ds")["yhat"].plot(ax=ax, label="Forecast")
+ax.fill_between(forecast["ds"].tail(horizon),
+                forecast["yhat_lower"].tail(horizon),
+                forecast["yhat_upper"].tail(horizon),
                 alpha=0.2, label="Confidence Interval")
-ax.set_ylabel("Calls per Day")
 ax.legend()
 st.pyplot(fig)
 
@@ -115,30 +95,51 @@ st.pyplot(fig)
 st.subheader("🗓️ Forecast Table")
 st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(horizon).round(2))
 
-# RMSE Table
-st.subheader("📊 RMSE Comparison")
-rmse_df = pd.DataFrame({
-    "Model": ["Prophet", "SARIMA", "Naive", "Moving Avg"],
-    "RMSE": [prophet_rmse, sarima_rmse, naive_rmse, ma_rmse]
-}).sort_values("RMSE")
-st.dataframe(rmse_df.style.highlight_min(subset=["RMSE"], color="#85C1E9"))
+# STL Decomposition
+st.subheader("📉 Trend Decomposition")
+stl = STL(series, seasonal=7)
+res = stl.fit()
+fig, axs = plt.subplots(3, 1, figsize=(10, 6), sharex=True)
+axs[0].plot(res.trend); axs[0].set_title("Trend")
+axs[1].plot(res.seasonal); axs[1].set_title("Seasonal")
+axs[2].plot(res.resid); axs[2].set_title("Residual")
+st.pyplot(fig)
 
-# Top Sites and Faults
+# Site Breakdown
 if "Site" in df.columns:
-    st.subheader("🏢 Top Sites by Breakdown Calls")
-    top_sites = df["Site"].value_counts().head(10)
-    st.bar_chart(top_sites)
+    st.subheader("📊 Breakdown Volume per Site Over Time")
+    site_group = df.groupby([df["Date Created"].dt.date, "Site"]).size().unstack().fillna(0)
+    st.line_chart(site_group)
 
+# Monthly Faults
 if "Fault" in df.columns:
-    st.subheader(" Top Fault Types")
-    top_faults = df["Fault"].value_counts().head(10)
-    st.bar_chart(top_faults)
+    st.subheader("📅 Monthly Fault Frequency Trend")
+    fault_monthly = df.groupby(["Month", "Fault"]).size().unstack().fillna(0)
+    st.bar_chart(fault_monthly)
 
-# Summary
-st.subheader("📌 Dashboard Summary")
-st.markdown(f"""
-- ✅ **Best Performing Model:** **{best_model}**
-- 📞 **Total Forecasted Calls (next {horizon} days):** **{int(forecast.iloc[-horizon:]['yhat'].sum())}**
-- ⏱️ **Average Response Delay:** {df['Response Delay_hours'].mean():.1f} hrs
-- 🛠️ **Average Resolution Time:** {df['Resolution_minutes'].mean():.1f} mins
-""")
+# Weekly Heatmap
+st.subheader("🕓 Weekly Heatmap (Hour vs Day)")
+heatmap_data = df.groupby(["DoW", "Hour"]).size().unstack(fill_value=0)
+heatmap_data = heatmap_data.reindex(index=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+fig, ax = plt.subplots(figsize=(12, 4))
+sns.heatmap(heatmap_data, cmap="YlGnBu", ax=ax)
+st.pyplot(fig)
+
+# Fault Pie
+if "Fault" in df.columns:
+    st.subheader("📌 Fault Share Pie Chart")
+    fault_counts = df["Fault"].value_counts()
+    fig, ax = plt.subplots()
+    ax.pie(fault_counts, labels=fault_counts.index, autopct="%1.1f%%")
+    st.pyplot(fig)
+
+# 🚨 Anomaly Detection
+st.subheader("🚨 Anomaly Detection (3× Daily Average)")
+threshold = series.mean() * 3
+anomalies = series[series > threshold]
+st.write(f"Threshold: {threshold:.1f} calls/day")
+st.dataframe(anomalies.reset_index().rename(columns={"index": "Date", "Calls": "Breakdown Calls"}))
+
+# 📥 Download
+csv = forecast.to_csv(index=False).encode()
+st.download_button("📥 Download Forecast CSV", csv, "forecast.csv", "text/csv")
