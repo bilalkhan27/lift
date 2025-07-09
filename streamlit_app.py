@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -21,13 +22,12 @@ if not uploaded_file:
     st.info("Please upload a breakdown Excel file to proceed.")
     st.stop()
 
-# Map column names
 COLUMN_MAP = {
-    "Actual Start": ["Actual Start", "Actual_Start", "Start Time", "Start", "ActualStart"],
-    "Date Created": ["Date Created", "Date_Created", "Reported Time", "Created", "Breakdown Time"],
-    "Actual Finish": ["Actual Finish", "Actual_Finish", "Finish Time", "End Time", "ActualFinish"],
+    "Actual Start": ["Actual Start", "Start Time", "ActualStart"],
+    "Date Created": ["Date Created", "Reported Time", "Breakdown Time"],
+    "Actual Finish": ["Actual Finish", "Finish Time", "ActualFinish"],
     "Site": ["Site", "Site ID", "Location", "Building"],
-    "Fault": ["Fault", "Fault Code", "Error", "Error Type"],
+    "Fault": ["Fault", "Fault Code", "Error Type"]
 }
 
 def _find_column(df, aliases):
@@ -68,14 +68,13 @@ df = load_data(uploaded_file)
 
 progress.progress(40)
 
-# Forecast Prep
 def prepare_series(df, date_col="Date Created"):
     return df.groupby(df[date_col].dt.date).size().rename("Calls").asfreq("D", fill_value=0)
 
 series = prepare_series(df)
 progress.progress(60)
 
-# Prophet Forecast
+# Forecast
 df_prophet = series.reset_index()
 df_prophet.columns = ["ds", "y"]
 prophet = Prophet(interval_width=0.8, weekly_seasonality=True)
@@ -83,18 +82,17 @@ prophet.fit(df_prophet)
 future = prophet.make_future_dataframe(periods=7)
 forecast = prophet.predict(future)
 
-# SARIMA Forecast
+# SARIMA
 sarima_model = SARIMAX(series, order=(1, 1, 1), seasonal_order=(1, 0, 1, 7))
 sarima_result = sarima_model.fit(disp=False)
 sarima_forecast = sarima_result.forecast(steps=7)
 
-# Naive and Moving Average
+# Baseline
 naive_forecast = [series[-1]] * 7
 moving_avg_forecast = [series[-7:].mean()] * 7
 
 progress.progress(80)
 
-# RMSE Calculation
 def rmse(y_true, y_pred):
     return sqrt(mean_squared_error(y_true, y_pred))
 
@@ -106,11 +104,20 @@ ma_rmse = rmse(actual, moving_avg_forecast)
 
 best_model = "Prophet" if prophet_rmse < min(sarima_rmse, naive_rmse, ma_rmse) else "Other"
 
-# 📊 Line Chart Forecast
-st.subheader("📊 Breakdown Call Forecast – Next 7 Days")
+# Forecast Table
+st.subheader("📅 Forecast Table – Next 7 Days")
+st.table(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(7).rename(columns={
+    "ds": "Date",
+    "yhat": "Predicted Calls",
+    "yhat_lower": "Lower Bound",
+    "yhat_upper": "Upper Bound"
+}))
+
+# Forecast Plot
+st.subheader("📈 Forecast Line Chart")
 fig, ax = plt.subplots(figsize=(10, 4))
 series.plot(ax=ax, label="Historical")
-forecast.set_index("ds")["yhat"].plot(ax=ax, label="Prophet Forecast")
+forecast.set_index("ds")["yhat"].plot(ax=ax, label="Forecast")
 ax.fill_between(
     forecast["ds"].tail(7).values,
     forecast["yhat_lower"].tail(7).values,
@@ -122,34 +129,33 @@ ax.legend()
 ax.set_ylabel("Calls per Day")
 st.pyplot(fig)
 
-# 🔢 Forecast Table
-st.subheader("📅 7-Day Forecast Table")
-st.write(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail(7).rename(columns={
-    'ds': 'Date', 'yhat': 'Predicted Calls', 'yhat_lower': 'Lower Bound', 'yhat_upper': 'Upper Bound'
-}))
+# Top Sites and Faults
+if "Site" in df.columns:
+    st.subheader("🏢 Top 5 Sites by Call Volume")
+    top_sites = df["Site"].value_counts().head(5)
+    st.bar_chart(top_sites)
 
-# 📈 Forecast RMSE Table
-st.subheader("📈 Forecast RMSE Comparison")
-st.write(pd.DataFrame({
-    "Model": ["Prophet", "SARIMA", "Naïve", "7-day Moving Avg"],
+if "Fault" in df.columns:
+    st.subheader("⚠️ Top 5 Faults by Occurrence")
+    top_faults = df["Fault"].value_counts().head(5)
+    st.bar_chart(top_faults)
+
+# RMSE Table
+st.subheader("🧠 Model RMSE Comparison")
+st.dataframe(pd.DataFrame({
+    "Model": ["Prophet", "SARIMA", "Naïve", "Moving Avg"],
     "RMSE": [prophet_rmse, sarima_rmse, naive_rmse, ma_rmse]
-}).sort_values("RMSE"))
+}).sort_values("RMSE").style.highlight_min("RMSE", color="lightgreen"))
 
-# 📋 Summary Table
+# Summary
 st.subheader("🧾 Dashboard Summary")
 summary_data = {
-    "Best-scoring model": [f"{best_model} (RMSE={round(min(prophet_rmse, sarima_rmse, naive_rmse, ma_rmse), 2)})"],
-    "Forecast horizon": [f"{int(forecast.iloc[-7:]['yhat'].sum())} calls (≈{round(forecast.iloc[-7:]['yhat'].mean(), 1)} daily avg)"],
-    "Avg response delay": [f"{df['Response Delay_hours'].mean():.1f} hours" if 'Response Delay_hours' in df else "N/A"],
-    "Avg resolution time": [f"{df['Resolution_minutes'].mean():.1f} min" if 'Resolution_minutes' in df else "N/A"],
-    "Top Sites": [", ".join(df['Site'].value_counts().head(3).index) if 'Site' in df else "N/A"],
-    "Top Faults": [", ".join(df['Fault'].value_counts().head(3).index) if 'Fault' in df else "N/A"],
+    "Best Model": [f"🟢 {best_model} (RMSE={round(min(prophet_rmse, sarima_rmse, naive_rmse, ma_rmse), 2)})"],
+    "Forecast Total": [f"{int(forecast.iloc[-7:]['yhat'].sum())} calls (≈{round(forecast.iloc[-7:]['yhat'].mean(), 1)} per day)"],
+    "Avg Response Delay": [f"{df['Response Delay_hours'].mean():.1f} hours" if 'Response Delay_hours' in df else "N/A"],
+    "Avg Resolution Time": [f"{df['Resolution_minutes'].mean():.1f} minutes" if 'Resolution_minutes' in df else "N/A"]
 }
 st.table(pd.DataFrame(summary_data))
-
-# 📄 Show top of raw data
-st.subheader("📄 Raw Data Preview")
-st.dataframe(df.head(10))
 
 progress.progress(100)
 status_text.text("✅ Dashboard complete!")
