@@ -185,17 +185,6 @@ st.markdown(f"""
 better_model = "Prophet" if prophet_rmse < sarima_rmse else "SARIMA"
 st.success(f"🏆 Best Performing Model Based on RMSE: **{better_model}**")
 
-# Optional: Plot both forecasts
-st.subheader("📈 Comparison: Prophet vs SARIMA Forecast")
-fig, ax = plt.subplots(figsize=(10, 4))
-series.plot(ax=ax, label="Historical", color="gray")
-forecast.set_index("ds")["yhat"].tail(horizon).plot(ax=ax, label="Prophet Forecast")
-sarima_forecast.index = forecast["ds"].tail(horizon).values  # align x-axis
-sarima_forecast.plot(ax=ax, label="SARIMA Forecast", linestyle="--")
-ax.legend()
-ax.set_title("Next Week Forecast: Prophet vs SARIMA")
-st.pyplot(fig)
-
 
 
 
