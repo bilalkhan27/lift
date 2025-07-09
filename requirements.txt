@@ -1,0 +1,11 @@
+streamlit
+pandas
+numpy
+matplotlib
+prophet
+statsmodels
+scikit-learn>=0.22
+pmdarima
+openpyxl
+pytz
+fpdf
