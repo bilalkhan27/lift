@@ -192,37 +192,35 @@ st.success(f"🏆 Best Performing Model Based on RMSE: **{better_model}**")
 csv = forecast.to_csv(index=False).encode()
 st.download_button("📥 Download Forecast CSV", csv, "forecast.csv", "text/csv")
 
-# 📅 Comparison: Previous Month vs Forecasted Week
-st.subheader("📆 Call Volume Comparison")
-
-# Get last full calendar month
-last_month = series.index.max().to_period("M") - 1
-last_month_data = series[series.index.to_period("M") == last_month]
-previous_month_total = last_month_data.sum()
-
-# Forecast next 7 days from Prophet
-forecast_7day = forecast.set_index("ds").loc[series.index.max() + pd.Timedelta(days=1):].head(7)
-forecast_total = forecast_7day["yhat"].sum()
-
-# Display values
-st.markdown(f"""
-- 📞 **Previous Month Total Calls ({last_month}):** `{int(previous_month_total)}`  
-- 🔮 **Forecasted Calls (Next 7 Days):** `{int(forecast_total)}`  
-""")
-
-# 📈 Visual comparison
-fig, ax = plt.subplots()
-ax.bar(["Previous Month", "Next 7 Days Forecast"], [previous_month_total, forecast_total], color=["#1f77b4", "#ff7f0e"])
-ax.set_ylabel("Total Calls")
-ax.set_title("Previous Month vs Forecasted Week Breakdown Volume")
-st.pyplot(fig)
-
-
 
 # Summary
 st.subheader("📌 Dashboard Summary")
 st.markdown(f"""
 - 📅 **Forecast Horizon:** Next {horizon} Days  
 - 📞 **Total Forecasted Calls:** {int(forecast.iloc[-horizon:]['yhat'].sum())}  
+st.subheader("🔥 Top 5 Frequent Fault Types")
+if "Fault" in df.columns:
+    top_faults = df["Fault"].value_counts().head(5)
+    st.bar_chart(top_faults)
+st.subheader("📊 Average Breakdowns by Day of Week")
+dow_avg = df.groupby("DoW").size().reindex([
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+])
+fig, ax = plt.subplots()
+dow_avg.plot(kind="bar", ax=ax)
+ax.set_ylabel("Avg Daily Calls")
+st.pyplot(fig)
+st.subheader("🚨 Anomaly Detection: Sudden Surges")
+mean_calls = series.mean()
+threshold = mean_calls * 3
+anomalies = series[series > threshold]
+if not anomalies.empty:
+    st.warning(f"⚠️ {len(anomalies)} anomaly days found (calls > 3× average)")
+    st.dataframe(anomalies.reset_index().rename(columns={"Date Created": "Date", "Calls": "Call Volume"}))
+else:
+    st.success("✅ No sudden surge days detected.")
+selected_site = st.selectbox("🏢 Filter by Site (Optional)", ["All"] + sorted(df["Site"].dropna().unique()))
+if selected_site != "All":
+    df = df[df["Site"] == selected_site]
 
 """)
