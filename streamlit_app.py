@@ -143,7 +143,25 @@ if "Fault" in df.columns:
 
 # Forecast Table
 st.subheader("🗓️ Forecast Table")
-st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(horizon).round(2))
+latest_forecast = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(horizon).round(2)
+st.dataframe(latest_forecast)
+
+# 📊 Forecast Trend Line Chart
+st.subheader("📈 Forecast Trend (Next Week)")
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.plot(latest_forecast["ds"], latest_forecast["yhat"], marker='o', label="Forecast")
+ax.fill_between(
+    latest_forecast["ds"],
+    latest_forecast["yhat_lower"],
+    latest_forecast["yhat_upper"],
+    alpha=0.2, label="Confidence Interval"
+)
+ax.set_xlabel("Date")
+ax.set_ylabel("Forecasted Calls")
+ax.set_title("Forecasted Breakdown Calls (Next 7–30 Days)")
+ax.legend()
+st.pyplot(fig)
+
 
 # CSV Export
 csv = forecast.to_csv(index=False).encode()
